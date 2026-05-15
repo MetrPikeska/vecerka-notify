@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VečerkaPlus — Buzení</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #080808;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+    transition: background 0.3s;
+  }
+
+  body.alarming {
+    animation: flashBg 0.6s infinite alternate;
+  }
+
+  @keyframes flashBg {
+    from { background: #080808; }
+    to   { background: #1a0800; }
+  }
+
+  h1 { font-size: 1.3rem; color: #f5c842; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #555; margin-bottom: 28px; }
+
+  /* Status bar */
+  .status-bar {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 12px;
+    padding: 14px 20px;
+    width: 100%; max-width: 560px;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #333; flex-shrink: 0; }
+  .dot.active { background: #22c55e; box-shadow: 0 0 8px #22c55e99; }
+  .dot.error  { background: #ef4444; }
+  #status-text { font-size: 0.85rem; color: #888; }
+  #last-check  { font-size: 0.72rem; color: #444; margin-left: auto; white-space: nowrap; }
+
+  /* Controls */
+  .controls {
+    width: 100%; max-width: 560px;
+    display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .btn {
+    padding: 9px 18px; border: none; border-radius: 8px;
+    cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  }
+  .btn-test  { background: #1e3a5f; color: #60a5fa; border: 1px solid #1e40af; }
+  .btn-test:hover { background: #1e40af; }
+  .btn-mute  { background: #1a1a1a; color: #888; border: 1px solid #333; }
+  .btn-mute.muted { color: #ef4444; border-color: #7f1d1d; }
+  #poll-label { font-size: 0.78rem; color: #444; margin-left: auto; align-self: center; }
+
+  /* ALARM overlay */
+  #alarm-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    text-align: center;
+    padding: 24px;
+  }
+  #alarm-overlay.show { display: flex; }
+
+  .alarm-icon { font-size: 5rem; animation: pulse 0.5s infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.15); } }
+
+  .alarm-title { font-size: 2rem; font-weight: 800; color: #f5c842; }
+  .alarm-count { font-size: 1rem; color: #f97316; font-weight: 600; }
+
+  .alarm-card {
+    background: #111;
+    border: 2px solid #f5c842;
+    border-radius: 14px;
+    padding: 20px 28px;
+    width: 100%; max-width: 420px;
+    text-align: left;
+  }
+  .alarm-card .name  { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+  .alarm-card .addr  { font-size: 0.9rem; color: #aaa; margin-bottom: 8px; }
+  .alarm-card .items { font-size: 0.85rem; color: #ccc; margin-bottom: 10px; line-height: 1.5; }
+  .alarm-card .total { font-size: 1.4rem; font-weight: 800; color: #f5c842; }
+  .alarm-card .pay   { font-size: 0.8rem; color: #888; margin-top: 2px; }
+
+  .btn-confirm {
+    background: #15803d; color: #fff;
+    border: none; border-radius: 12px;
+    font-size: 1.3rem; font-weight: 800;
+    padding: 18px 48px;
+    cursor: pointer;
+    box-shadow: 0 0 24px #15803d88;
+    transition: transform 0.1s;
+  }
+  .btn-confirm:active { transform: scale(0.97); }
+
+  .alarm-snooze {
+    font-size: 0.78rem; color: #444; cursor: pointer;
+    text-decoration: underline; margin-top: -8px;
+  }
+  .alarm-snooze:hover { color: #888; }
+
+  /* Config warn */
+  .config-warn {
+    background: #1a0a0a; border: 1px solid #7f1d1d;
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 0.83rem; color: #fca5a5;
+    width: 100%; max-width: 560px; margin-bottom: 20px;
+    display: none;
+  }
+  .config-warn code { background: #2a1a1a; padding: 2px 5px; border-radius: 4px; }
+
+  /* Order list */
+  .orders-list { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
+  .order-card {
+    background: #111; border: 1px solid #1e1e1e;
+    border-radius: 10px; padding: 14px 18px;
+  }
+  .order-card .oh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .order-card .oid { font-size: 0.72rem; color: #444; font-family: monospace; }
+  .order-card .ost {
+    font-size: 0.72rem; padding: 2px 9px; border-radius: 20px;
+    background: #1e3a2f; color: #22c55e;
+  }
+  .order-card .oname { font-weight: 600; margin-bottom: 2px; }
+  .order-card .oaddr { font-size: 0.82rem; color: #777; margin-bottom: 6px; }
+  .order-card .oitems { font-size: 0.8rem; color: #aaa; margin-bottom: 8px; }
+  .order-card .ofooter { display: flex; justify-content: space-between; align-items: center; }
+  .order-card .ototal { font-weight: 700; color: #f5c842; }
+  .order-card .otime  { font-size: 0.72rem; color: #444; }
+
+  .empty { color: #333; font-size: 0.88rem; text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<!-- Konfigurace — zkopíruj config.example.js jako config.js a doplň hodnoty -->
+<script src="config.js"></script>
+
+<!-- Alarm overlay -->
+<div id="alarm-overlay">
+  <div class="alarm-icon">🚨</div>
+  <div class="alarm-title">NOVÁ OBJEDNÁVKA!</div>
+  <div class="alarm-count" id="alarm-count"></div>
+  <div class="alarm-card" id="alarm-card">
+    <div class="name" id="al-name"></div>
+    <div class="addr" id="al-addr"></div>
+    <div class="items" id="al-items"></div>
+    <div class="total" id="al-total"></div>
+    <div class="pay"   id="al-pay"></div>
+  </div>
+  <button class="btn-confirm" onclick="confirmAlarm()">✅ Beru to</button>
+  <span class="alarm-snooze" onclick="snoozeAlarm()">Odložit na 2 min</span>
+</div>
+
+<h1>🌙 VečerkaPlus</h1>
+<div class="subtitle">Noční buzení — řidič může spát</div>
+
+<div class="config-warn" id="config-warn">
+  ⚠️ Doplň <code>SUPABASE_URL</code> a <code>SUPABASE_KEY</code> v HTML souboru.
+</div>
+
+<div class="status-bar">
+  <div class="dot" id="dot"></div>
+  <span id="status-text">Inicializace…</span>
+  <span id="last-check"></span>
+</div>
+
+<div class="controls">
+  <button class="btn btn-test" onclick="testAlarm()">🔔 Test alarmu</button>
+  <button class="btn btn-mute" id="mute-btn" onclick="toggleMute()">🔊 Zvuk zapnutý</button>
+  <span id="poll-label"></span>
+</div>
+
+<div class="orders-list" id="orders-list">
+  <div class="empty">Načítání…</div>
+</div>
+
+<script>
+// ─── Stav ─────────────────────────────────────────────
+let knownIds     = new Set();
+let initialized  = false;
+let muted        = false;
+let alarmActive  = false;
+let alarmTimer   = null;
+let snoozeUntil  = 0;
+let pendingOrders = [];
+let audioCtx     = null;
+
+// ─── Audio ────────────────────────────────────────────
+function ctx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playBeep() {
+  if (muted) return;
+  try {
+    const c = ctx();
+    // Silný opakovaný alarm — 4 tóny
+    const seq = [
+      { f: 1200, t: 0.00 },
+      { f: 1000, t: 0.20 },
+      { f: 1200, t: 0.40 },
+      { f: 1000, t: 0.60 },
+    ];
+    seq.forEach(({ f, t }) => {
+      const osc  = c.createOscillator();
+      const gain = c.createGain();
+      // Distortion pro průraznost
+      const dist = c.createWaveShaper();
+      dist.curve = makeDistCurve(200);
+      osc.connect(dist); dist.connect(gain); gain.connect(c.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(f, c.currentTime + t);
+      gain.gain.setValueAtTime(0.9, c.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + t + 0.18);
+      osc.start(c.currentTime + t);
+      osc.stop(c.currentTime + t + 0.19);
+    });
+  } catch(e) { console.warn(e); }
+}
+
+function makeDistCurve(amount) {
+  const n = 256, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+// ─── Alarm start/stop ─────────────────────────────────
+function startAlarm(orders) {
+  if (alarmActive) return;
+  alarmActive = true;
+  pendingOrders = orders;
+
+  showAlarmOverlay(orders[0], orders.length);
+  document.body.classList.add('alarming');
+  document.title = '🚨 NOVÁ OBJEDNÁVKA! — VečerkaPlus';
+
+  playBeep();
+  alarmTimer = setInterval(() => {
+    if (alarmActive) playBeep();
+  }, ALARM_REPEAT_SEC * 1000);
+}
+
+function stopAlarm() {
+  alarmActive = false;
+  clearInterval(alarmTimer);
+  alarmTimer = null;
+  document.body.classList.remove('alarming');
+  document.getElementById('alarm-overlay').classList.remove('show');
+  document.title = '🌙 VečerkaPlus — Buzení';
+}
+
+function confirmAlarm() {
+  stopAlarm();
+  // Označíme všechny pending jako known
+  pendingOrders.forEach(o => knownIds.add(o.id));
+  pendingOrders = [];
+}
+
+function snoozeAlarm() {
+  stopAlarm();
+  snoozeUntil = Date.now() + 2 * 60 * 1000; // 2 minuty
+  document.title = '💤 Snooze — VečerkaPlus';
+}
+
+function testAlarm() {
+  const fakeOrder = {
+    id: 'test-0000-0000',
+    name: 'Testovací zákazník',
+    address: 'Náměstí Svobody 1, Frýdek-Místek',
+    items: [
+      { name: 'Jack Daniel\'s Black 0,7l', quantity: 1 },
+      { name: 'Lay\'s 60g', quantity: 2 }
+    ],
+    total: 817,
+    payment: 'Hotovost',
+    created_at: new Date().toISOString()
+  };
+  stopAlarm();
+  setTimeout(() => startAlarm([fakeOrder]), 100);
+}
+
+// ─── Overlay ──────────────────────────────────────────
+function showAlarmOverlay(order, count) {
+  document.getElementById('al-name').textContent  = order.name || '—';
+  document.getElementById('al-addr').textContent  = '📍 ' + (order.address || '—');
+  document.getElementById('al-items').innerHTML   = formatItems(order.items);
+  document.getElementById('al-total').textContent = (order.total || '?') + ' Kč';
+  document.getElementById('al-pay').textContent   = '💳 ' + (order.payment || '—');
+  document.getElementById('alarm-count').textContent =
+    count > 1 ? `Celkem ${count} nových objednávek` : '';
+  document.getElementById('alarm-overlay').classList.add('show');
+}
+
+// ─── Mute ─────────────────────────────────────────────
+function toggleMute() {
+  muted = !muted;
+  const btn = document.getElementById('mute-btn');
+  btn.textContent = muted ? '🔇 Zvuk vypnutý' : '🔊 Zvuk zapnutý';
+  btn.classList.toggle('muted', muted);
+}
+
+// ─── Supabase fetch ───────────────────────────────────
+async function fetchOrders() {
+  const url = `${SUPABASE_URL}/rest/v1/orders?select=id,created_at,name,address,phone,payment,items,total,status&order=created_at.desc&limit=30`;
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`
+    }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ─── Helpers ──────────────────────────────────────────
+function formatItems(items) {
+  if (!Array.isArray(items) || !items.length) return '—';
+  return items.map(i => `${i.name} ×${i.qty || i.quantity || 1}`).join('<br>');
+}
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleString('cs-CZ', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+// ─── Render orders ────────────────────────────────────
+function renderOrders(orders) {
+  const list = document.getElementById('orders-list');
+  if (!orders.length) {
+    list.innerHTML = '<div class="empty">Žádné objednávky v databázi.</div>';
+    return;
+  }
+  list.innerHTML = orders.map(o => `
+    <div class="order-card">
+      <div class="oh">
+        <span class="oid">#${o.id.slice(0,8)}</span>
+        <span class="ost">${o.status || 'nová'}</span>
+      </div>
+      <div class="oname">${o.name || '—'}</div>
+      <div class="oaddr">📍 ${o.address || '—'}</div>
+      <div class="oitems">🛒 ${Array.isArray(o.items) ? o.items.map(i => `${i.name} ×${i.qty||i.quantity||1}`).join(', ') : '—'}</div>
+      <div class="ofooter">
+        <span class="ototal">${o.total || '?'} Kč</span>
+        <span class="otime">${formatTime(o.created_at)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── Poll ─────────────────────────────────────────────
+async function poll() {
+  const dot        = document.getElementById('dot');
+  const statusText = document.getElementById('status-text');
+  const lastCheck  = document.getElementById('last-check');
+
+  try {
+    const orders = await fetchOrders();
+
+    // Nové objednávky (status === 'nová' a ještě neznámé)
+    const newOrders = orders.filter(o =>
+      !knownIds.has(o.id) && (o.status === 'nová' || o.status === 'nova')
+    );
+
+    if (initialized && newOrders.length > 0 && Date.now() > snoozeUntil) {
+      startAlarm(newOrders);
+    }
+
+    // Při inicializaci jen naplníme known IDs, alarm nespouštíme
+    if (!initialized) {
+      orders.forEach(o => knownIds.add(o.id));
+      initialized = true;
+    } else {
+      // Přidáme jen ty co jsme potvrdili / jsou starší
+      orders
+        .filter(o => o.status !== 'nová' && o.status !== 'nova')
+        .forEach(o => knownIds.add(o.id));
+    }
+
+    renderOrders(orders);
+    dot.className = 'dot active';
+    statusText.textContent = `Připojeno · ${orders.length} objednávek`;
+    lastCheck.textContent  = new Date().toLocaleTimeString('cs-CZ');
+
+  } catch (err) {
+    dot.className = 'dot error';
+    statusText.textContent = 'Chyba: ' + err.message;
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  if (SUPABASE_URL.includes('TVUJ') || SUPABASE_KEY.includes('TVUJ')) {
+    document.getElementById('config-warn').style.display = 'block';
+  }
+  document.getElementById('poll-label').textContent = `Polluje každých ${POLL_SEC}s`;
+
+  // Odemknout audio po prvním kliku
+  document.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }, { once: true });
+
+  poll();
+  setInterval(poll, POLL_SEC * 1000);
+});
+</script>
+</body>
+</html>
